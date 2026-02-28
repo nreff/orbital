@@ -2,7 +2,7 @@
 
 A 2D orbital mechanics sandbox built with HTML5 Canvas and vanilla JavaScript. Place bodies by clicking and dragging — drag direction sets the launch velocity. All bodies exert Newtonian gravity on each other.
 
-![Screenshot](assets/screenshot.PNG)
+![Screenshot](assets/screenshot2.PNG)
 
 ## Running
 
