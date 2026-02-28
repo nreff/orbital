@@ -1,5 +1,8 @@
-const STAR_CORONA_RADIUS = 80;
 const STARFIELD_COUNT = 200;
+const G = 2.0;
+const VELOCITY_SCALE = 1.5;
+const PREDICTOR_STEPS = 600;
+const PREDICTOR_DT    = 1 / 240;
 
 export class Renderer {
   constructor(canvas) {
@@ -34,30 +37,49 @@ export class Renderer {
   /**
    * Main draw call — invoked once per animation frame.
    * @param {CelestialBody[]} bodies
-   * @param {Star} star
-   * @param {object} placement   — from Input.placement
-   * @param {object} config      — { newBodyColor }
+   * @param {Star|null}       star
+   * @param {object}          placement   — from Input.placement
+   * @param {object}          config      — UI config
+   * @param {object}          camera      — { panX, panY, zoom }
+   * @param {CelestialBody|null} inspectedBody
    */
-  draw(bodies, star, placement, config) {
+  draw(bodies, star, placement, config, camera, inspectedBody) {
     const { ctx, canvas } = this;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    this._drawBackground(star);
+    // Background + starfield — screen space (no camera transform)
+    this._drawBackground();
+
+    // World-space objects — inside camera transform
+    const { panX, panY, zoom } = camera;
+    ctx.save();
+    ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
+
     this._drawTrails(bodies);
     this._drawBodies(bodies);
     if (star) this._drawStar(star);
-    this._drawPlacement(placement, star, config);
+
+    // Orbit predictor (world space, inside transform)
+    if (placement.phase === 'dragging' && star) {
+      this._drawPredictor(placement, star, camera);
+    }
+
+    ctx.restore();
+
+    // Screen-space overlays
+    this._drawPlacement(placement, star, config, camera);
+    if (inspectedBody) this._drawInspector(inspectedBody, camera, star);
   }
 
   // ── Background ────────────────────────────────────────────────────────────
 
-  _drawBackground(star) {
+  _drawBackground() {
     const { ctx, canvas } = this;
 
-    // Deep space gradient centred on star (or canvas centre in freeform)
+    // Deep space gradient (always screen-space, centred on canvas)
     if (!this._bgGradient) {
-      const cx = star ? star.position.x : canvas.width  / 2;
-      const cy = star ? star.position.y : canvas.height / 2;
+      const cx = canvas.width  / 2;
+      const cy = canvas.height / 2;
       const g = ctx.createRadialGradient(
         cx, cy, 0,
         cx, cy, Math.max(canvas.width, canvas.height) * 0.8
@@ -181,14 +203,82 @@ export class Renderer {
     this._drawStarAt(star.position.x, star.position.y, star.radius, '#ffe066');
   }
 
+  // ── Orbit predictor ───────────────────────────────────────────────────────
+
+  /**
+   * Forward-simulate the would-be body's trajectory and draw it.
+   * Called inside ctx.save/setTransform, so coordinates are world space.
+   */
+  _drawPredictor(placement, star, camera) {
+    const { ctx } = this;
+    const { panX, panY, zoom } = camera;
+
+    // Anchor in world space
+    let px = (placement.anchorX - panX) / zoom;
+    let py = (placement.anchorY - panY) / zoom;
+
+    // World-space velocity
+    let vx = (placement.tipX - placement.anchorX) * VELOCITY_SCALE / zoom;
+    let vy = (placement.tipY - placement.anchorY) * VELOCITY_SCALE / zoom;
+
+    const SOFTENING_SQ = 25; // 5²
+    const starX = star.position.x;
+    const starY = star.position.y;
+    const starR = star.radius;
+    const starM = star.mass;
+
+    const path = [{ x: px, y: py }];
+    for (let i = 0; i < PREDICTOR_STEPS; i++) {
+      const dx = starX - px;
+      const dy = starY - py;
+      const distSq = dx * dx + dy * dy + SOFTENING_SQ;
+      const dist   = Math.sqrt(distSq);
+      const f      = G * starM / distSq;
+      vx += f * (dx / dist) * PREDICTOR_DT;
+      vy += f * (dy / dist) * PREDICTOR_DT;
+      px += vx * PREDICTOR_DT;
+      py += vy * PREDICTOR_DT;
+      path.push({ x: px, y: py });
+      // Stop if impacted star
+      const ddx = px - starX, ddy = py - starY;
+      if (ddx * ddx + ddy * ddy < starR * starR) break;
+    }
+
+    if (path.length < 2) return;
+
+    // Draw as 8 fading segments (1 ctx.stroke per segment)
+    const FADE_SEGS = 8;
+    const n = path.length;
+    const segSize = Math.ceil(n / FADE_SEGS);
+    const lw = 1.5 / zoom; // ~1.5 screen pixels regardless of zoom
+
+    for (let seg = 0; seg < FADE_SEGS; seg++) {
+      const alpha = 0.5 * (1 - seg / FADE_SEGS);
+      const start = seg * segSize;
+      if (start >= n) break;
+      const end = Math.min(start + segSize + 1, n);
+
+      ctx.beginPath();
+      ctx.moveTo(path[start].x, path[start].y);
+      for (let i = start + 1; i < end; i++) {
+        ctx.lineTo(path[i].x, path[i].y);
+      }
+      ctx.strokeStyle = `rgba(100,200,255,${alpha})`;
+      ctx.lineWidth   = lw;
+      ctx.stroke();
+    }
+  }
+
   // ── Placement preview ─────────────────────────────────────────────────────
 
-  _drawPlacement(placement, star, config) {
+  /** Drawn in screen space (after ctx.restore). */
+  _drawPlacement(placement, star, config, camera) {
     if (placement.phase !== 'dragging') return;
     const { ctx } = this;
     const { anchorX, anchorY, tipX, tipY } = placement;
-    const color = config.newBodyColor || '#4fc3f7';
-    const radius = config.newBodyRadius || 8;
+    const { panX, panY, zoom } = camera;
+    const color  = config.newBodyColor  || '#4fc3f7';
+    const radius = (config.newBodyRadius || 8) * zoom; // scale with zoom
 
     // Ghost body at anchor
     ctx.beginPath();
@@ -208,7 +298,7 @@ export class Renderer {
     const ux = dx / len;
     const uy = dy / len;
     const arrowLen = len;
-    const headLen = Math.min(14, arrowLen * 0.35);
+    const headLen  = Math.min(14, arrowLen * 0.35);
     const ex = anchorX + ux * arrowLen;
     const ey = anchorY + uy * arrowLen;
 
@@ -229,23 +319,98 @@ export class Renderer {
     ctx.fillStyle = hexToRgba(color, 0.85);
     ctx.fill();
 
-    // Speed label
-    const VELOCITY_SCALE = 1.5;
-    const speed = Math.round(len * VELOCITY_SCALE);
+    // Speed label — show world-space values
+    const worldSpeed = Math.round(len * VELOCITY_SCALE / zoom);
+    let label = `v=${worldSpeed}`;
+    if (star) {
+      // Convert anchor screen → world for v_circ
+      const wx = (anchorX - panX) / zoom;
+      const wy = (anchorY - panY) / zoom;
+      label += `  v_circ≈${Math.round(this._circularSpeed(wx, wy, star))}`;
+    }
     ctx.font = '11px monospace';
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
-    const label = star
-      ? `v=${speed}  v_circ≈${Math.round(this._circularSpeed(anchorX, anchorY, star))}`
-      : `v=${speed}`;
     ctx.fillText(label, ex + 8, ey - 6);
   }
 
   _circularSpeed(x, y, star) {
     const dx = x - star.position.x;
     const dy = y - star.position.y;
-    const r = Math.sqrt(dx * dx + dy * dy);
+    const r  = Math.sqrt(dx * dx + dy * dy);
     if (r < 1) return 0;
-    return Math.sqrt(2.0 * star.mass / r);
+    return Math.sqrt(G * star.mass / r);
+  }
+
+  // ── Inspector overlay ─────────────────────────────────────────────────────
+
+  /** Drawn in screen space (after ctx.restore). */
+  _drawInspector(body, camera, star) {
+    const { ctx, canvas } = this;
+    const { panX, panY, zoom } = camera;
+
+    // Body's screen position
+    const sx = body.position.x * zoom + panX;
+    const sy = body.position.y * zoom + panY;
+
+    // Stats
+    const speed = Math.sqrt(body.velocity.vx ** 2 + body.velocity.vy ** 2);
+    let dist = 0, period = 0;
+    if (star) {
+      const dx = body.position.x - star.position.x;
+      const dy = body.position.y - star.position.y;
+      dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 0) {
+        period = 2 * Math.PI * Math.sqrt(dist ** 3 / (G * star.mass));
+      }
+    }
+
+    const lines = [
+      body.type === 'star' ? `⭐ Star #${body.id}` : `Body #${body.id}`,
+      `mass: ${Math.round(body.mass)}`,
+      `speed: ${speed.toFixed(1)} px/s`,
+      star ? `dist: ${Math.round(dist)} px`  : null,
+      star && period > 0 ? `T ≈ ${period.toFixed(1)} s` : null,
+    ].filter(Boolean);
+
+    const padding    = 10;
+    const lineHeight = 16;
+    const cardW = 170;
+    const cardH = lines.length * lineHeight + padding * 2;
+
+    // Position card above body, clamped to canvas bounds
+    let cx = sx - cardW / 2;
+    let cy = sy - body.radius * zoom - cardH - 14;
+    cx = Math.max(4, Math.min(canvas.width  - cardW - 4, cx));
+    cy = Math.max(4, Math.min(canvas.height - cardH - 4, cy));
+
+    // Card background (rounded rect)
+    const rr = 6;
+    ctx.beginPath();
+    ctx.moveTo(cx + rr, cy);
+    ctx.lineTo(cx + cardW - rr, cy);
+    ctx.arcTo(cx + cardW, cy,          cx + cardW, cy + rr,          rr);
+    ctx.lineTo(cx + cardW, cy + cardH - rr);
+    ctx.arcTo(cx + cardW, cy + cardH,  cx + cardW - rr, cy + cardH,  rr);
+    ctx.lineTo(cx + rr, cy + cardH);
+    ctx.arcTo(cx,        cy + cardH,   cx, cy + cardH - rr,          rr);
+    ctx.lineTo(cx, cy + rr);
+    ctx.arcTo(cx,        cy,           cx + rr, cy,                  rr);
+    ctx.closePath();
+    ctx.fillStyle   = 'rgba(10,10,30,0.88)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(100,180,255,0.5)';
+    ctx.lineWidth   = 1;
+    ctx.stroke();
+
+    // Text
+    const tx = cx + padding;
+    ctx.font      = 'bold 11px monospace';
+    ctx.fillStyle = 'rgba(220,240,255,0.95)';
+    ctx.fillText(lines[0], tx, cy + padding + 11);
+    ctx.font = '11px monospace';
+    for (let i = 1; i < lines.length; i++) {
+      ctx.fillText(lines[i], tx, cy + padding + 11 + i * lineHeight);
+    }
   }
 }
 

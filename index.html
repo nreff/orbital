@@ -49,6 +49,11 @@
         </div>
       </div>
 
+      <div class="control-group">
+        <label for="speed-slider">Speed <span id="speed-value">1×</span></label>
+        <input type="range" id="speed-slider" min="-2" max="2" step="0.5" value="0" />
+      </div>
+
       <section class="button-row">
         <button id="btn-pause">Pause</button>
         <button id="btn-reset">Reset</button>
@@ -60,8 +65,9 @@
       </section>
 
       <section class="hint">
-        <p>Click &amp; drag on canvas to place a body.</p>
-        <p>Drag direction = launch direction.</p>
+        <p>Click &amp; drag to place a body.</p>
+        <p>Scroll to zoom · Right-drag to pan.</p>
+        <p>Click a body to inspect it.</p>
       </section>
     </aside>
   </div>

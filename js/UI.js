@@ -27,6 +27,8 @@ export class UI {
     this._starMassSlider = document.getElementById('star-mass-slider');
     this._starMassValue  = document.getElementById('star-mass-value');
     this._starControls   = document.getElementById('star-controls');
+    this._speedSlider    = document.getElementById('speed-slider');
+    this._speedValue     = document.getElementById('speed-value');
     this._btnPause       = document.getElementById('btn-pause');
     this._btnReset       = document.getElementById('btn-reset');
     this._btnModeStar    = document.getElementById('btn-mode-star');
@@ -36,6 +38,7 @@ export class UI {
 
     this._sizeSlider.addEventListener('input',  () => this._onSizeChange());
     this._colorPicker.addEventListener('input', () => this._drawPreview());
+    this._speedSlider.addEventListener('input', () => this._onSpeedChange());
     this._starMassSlider.addEventListener('input', () => this._updateStarMassLabel());
     this._btnPause.addEventListener('click', () => this._onPause());
     this._btnReset.addEventListener('click', () => this._onReset());
@@ -49,6 +52,7 @@ export class UI {
 
     this._onSizeChange();
     this._updateStarMassLabel();
+    this._onSpeedChange();
   }
 
   /** Current new-body config derived from UI controls. */
@@ -63,6 +67,7 @@ export class UI {
       newBodyRadius: r,
       type:          this._bodyType,
       starMass,
+      timeScale:     Math.pow(2, +this._speedSlider.value),
     };
   }
 
@@ -243,6 +248,11 @@ export class UI {
     info.append(name, vel);
     li.append(dot, info, btn);
     return li;
+  }
+
+  _onSpeedChange() {
+    const scale = Math.pow(2, +this._speedSlider.value);
+    this._speedValue.textContent = `${parseFloat(scale.toPrecision(3))}×`;
   }
 
   _radiusToMass(r) {
