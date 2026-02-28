@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orbit Game</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="canvas"></canvas>
+    <aside id="panel">
+      <h2>Orbit Sandbox</h2>
+
+      <section class="mode-toggle">
+        <button id="btn-mode-star" class="mode-btn active">⭐ Star</button>
+        <button id="btn-mode-free" class="mode-btn">Freeform</button>
+      </section>
+
+      <!-- Star controls (hidden in freeform mode) -->
+      <section id="star-controls" class="sub-section">
+        <p class="section-label">Star</p>
+        <div class="control-group">
+          <label for="star-mass-slider">Mass <span id="star-mass-value">1,000,000</span></label>
+          <input type="range" id="star-mass-slider" min="0" max="100" value="67" />
+        </div>
+      </section>
+
+      <p class="section-label">Next Body</p>
+
+      <div class="mode-toggle">
+        <button id="btn-type-planet" class="mode-btn active">🪐 Planet</button>
+        <button id="btn-type-star"   class="mode-btn">⭐ Star</button>
+      </div>
+
+      <!-- Body preview + size slider side by side -->
+      <div class="size-row">
+        <canvas id="body-preview" width="72" height="72"></canvas>
+        <div class="size-controls">
+          <div class="control-group">
+            <label for="size-slider">Size <span id="size-readout">8 px</span></label>
+            <input type="range" id="size-slider" min="3" max="40" value="8" />
+          </div>
+          <div class="mass-readout">mass = <span id="mass-readout">100</span></div>
+          <div class="control-group">
+            <label for="color-picker">Color</label>
+            <input type="color" id="color-picker" value="#4fc3f7" />
+          </div>
+        </div>
+      </div>
+
+      <section class="button-row">
+        <button id="btn-pause">Pause</button>
+        <button id="btn-reset">Reset</button>
+      </section>
+
+      <section class="body-list-section">
+        <h3>Bodies <span id="body-count">(0)</span></h3>
+        <ul id="body-list"></ul>
+      </section>
+
+      <section class="hint">
+        <p>Click &amp; drag on canvas to place a body.</p>
+        <p>Drag direction = launch direction.</p>
+      </section>
+    </aside>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
