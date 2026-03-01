@@ -60,8 +60,12 @@ export class Renderer {
     if (star) this._drawStar(star);
 
     // Orbit predictor (world space, inside transform)
-    if (placement.phase === 'dragging' && star) {
+    if (placement.phase === 'dragging' && star && config.showPredictor) {
       this._drawPredictor(placement, star, camera);
+    }
+
+    if (config.showVelocityArrows) {
+      this._drawVelocityArrows(bodies, camera.zoom);
     }
 
     ctx.restore();
@@ -266,6 +270,47 @@ export class Renderer {
       ctx.strokeStyle = `rgba(100,200,255,${alpha})`;
       ctx.lineWidth   = lw;
       ctx.stroke();
+    }
+  }
+
+  // ── Velocity arrows ───────────────────────────────────────────────────────
+
+  /** Drawn in world space (inside ctx.save/setTransform). */
+  _drawVelocityArrows(bodies, zoom) {
+    const { ctx } = this;
+    const lw = 1.5 / zoom;
+
+    for (const b of bodies) {
+      const { vx, vy } = b.velocity;
+      const speed = Math.sqrt(vx * vx + vy * vy);
+      if (speed < 0.5) continue;
+
+      const ux = vx / speed;
+      const uy = vy / speed;
+      const len = Math.min(speed * 0.4, 80);
+
+      const bx = b.position.x + ux * b.radius;
+      const by = b.position.y + uy * b.radius;
+      const tx = bx + ux * len;
+      const ty = by + uy * len;
+
+      ctx.strokeStyle = 'rgba(255,255,200,0.7)';
+      ctx.lineWidth   = lw;
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+
+      // Arrowhead
+      const headLen = Math.min(8 / zoom, len * 0.4);
+      const angle   = Math.atan2(uy, ux);
+      ctx.fillStyle = 'rgba(255,255,200,0.7)';
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx - headLen * Math.cos(angle - 0.4), ty - headLen * Math.sin(angle - 0.4));
+      ctx.lineTo(tx - headLen * Math.cos(angle + 0.4), ty - headLen * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
     }
   }
 

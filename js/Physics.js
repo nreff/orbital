@@ -13,8 +13,14 @@ export class Physics {
    * @param {Star} star
    * @param {number} frameTimeSec
    */
-  step(bodies, star, frameTimeSec) {
+  /**
+   * @param {object} options
+   * @param {boolean} options.explosions  — if true, collisions scatter fragments instead of merging
+   * @returns {{ fragments: object[] }}   — fragment spawn data (empty when explosions=false)
+   */
+  step(bodies, star, frameTimeSec, options = {}) {
     const dt = frameTimeSec / SUBSTEPS;
+    const fragments = [];
 
     for (let s = 0; s < SUBSTEPS; s++) {
       // Velocity Verlet — half-kick, drift, recompute forces, half-kick
@@ -46,8 +52,10 @@ export class Physics {
       }
 
       // Collision detection after each substep
-      this._handleCollisions(bodies, star);
+      this._handleCollisions(bodies, star, options.explosions ? fragments : null);
     }
+
+    return { fragments };
   }
 
   /** Compute gravitational acceleration on each body from star + all other bodies. */
@@ -90,21 +98,21 @@ export class Physics {
     }
   }
 
-  /** Merge overlapping bodies; flag bodies absorbed by star. */
-  _handleCollisions(bodies, star) {
-    // Body vs star (star may be null in freeform mode)
+  /** Merge or explode overlapping bodies; flag bodies absorbed by star. */
+  _handleCollisions(bodies, star, fragments) {
+    // Body vs star — always absorbed (star never explodes)
     if (star) {
       for (const b of bodies) {
         const dx = b.position.x - star.position.x;
         const dy = b.position.y - star.position.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < star.radius + b.radius * 0.5) {
-          b.merged = true; // absorbed
+          b.merged = true;
         }
       }
     }
 
-    // Body vs body (merge smaller into larger)
+    // Body vs body
     for (let i = 0; i < bodies.length; i++) {
       if (bodies[i].merged) continue;
       for (let j = i + 1; j < bodies.length; j++) {
@@ -115,20 +123,59 @@ export class Physics {
         const dy = bdy.position.y - a.position.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < a.radius + bdy.radius) {
-          // Merge: momentum conservation, volume conservation
-          const totalMass = a.mass + bdy.mass;
-          // Weighted position toward more massive
-          a.position.x = (a.position.x * a.mass + bdy.position.x * bdy.mass) / totalMass;
-          a.position.y = (a.position.y * a.mass + bdy.position.y * bdy.mass) / totalMass;
-          // Momentum conservation
-          a.velocity.vx = (a.velocity.vx * a.mass + bdy.velocity.vx * bdy.mass) / totalMass;
-          a.velocity.vy = (a.velocity.vy * a.mass + bdy.velocity.vy * bdy.mass) / totalMass;
-          // Volume conservation: r ∝ mass^(1/3) (roughly)
-          a.radius = Math.cbrt(a.radius ** 3 + bdy.radius ** 3);
-          a.mass = totalMass;
-          bdy.merged = true;
+          if (fragments) {
+            this._explode(a, bdy, fragments);
+            a.merged = true;
+            bdy.merged = true;
+          } else {
+            // Normal merge: momentum + volume conservation
+            const totalMass = a.mass + bdy.mass;
+            a.position.x = (a.position.x * a.mass + bdy.position.x * bdy.mass) / totalMass;
+            a.position.y = (a.position.y * a.mass + bdy.position.y * bdy.mass) / totalMass;
+            a.velocity.vx = (a.velocity.vx * a.mass + bdy.velocity.vx * bdy.mass) / totalMass;
+            a.velocity.vy = (a.velocity.vy * a.mass + bdy.velocity.vy * bdy.mass) / totalMass;
+            a.radius = Math.cbrt(a.radius ** 3 + bdy.radius ** 3);
+            a.mass = totalMass;
+            bdy.merged = true;
+          }
         }
       }
+    }
+  }
+
+  _explode(a, b, fragments) {
+    const totalMass = a.mass + b.mass;
+    // Center of mass position and velocity
+    const cx  = (a.position.x * a.mass + b.position.x * b.mass) / totalMass;
+    const cy  = (a.position.y * a.mass + b.position.y * b.mass) / totalMass;
+    const cvx = (a.velocity.vx * a.mass + b.velocity.vx * b.mass) / totalMass;
+    const cvy = (a.velocity.vy * a.mass + b.velocity.vy * b.mass) / totalMass;
+
+    // Kick speed based on relative impact velocity
+    const relVx = a.velocity.vx - b.velocity.vx;
+    const relVy = a.velocity.vy - b.velocity.vy;
+    const kickSpeed = Math.max(8, Math.sqrt(relVx * relVx + relVy * relVy) * 0.45);
+
+    // Number of fragments scales with combined size
+    const N = Math.max(3, Math.min(8, Math.round((a.radius + b.radius) / 3)));
+    const fragRadius = Math.max(2, Math.cbrt((a.radius ** 3 + b.radius ** 3) / N));
+    const fragMass   = Math.max(1, Math.round(totalMass / N));
+    const color      = a.mass >= b.mass ? a.color : b.color;
+    const spawnR     = fragRadius * 2 + 3; // spawn spread to avoid instant re-collision
+
+    for (let i = 0; i < N; i++) {
+      const angle = (i / N) * 2 * Math.PI + (Math.random() - 0.5) * (Math.PI / N);
+      const kick  = kickSpeed * (0.7 + Math.random() * 0.6);
+      fragments.push({
+        x:      cx + Math.cos(angle) * spawnR,
+        y:      cy + Math.sin(angle) * spawnR,
+        vx:     cvx + Math.cos(angle) * kick,
+        vy:     cvy + Math.sin(angle) * kick,
+        mass:   fragMass,
+        radius: fragRadius,
+        color,
+        type:   'planet',
+      });
     }
   }
 

@@ -3,9 +3,11 @@ import { Physics }  from './Physics.js';
 import { Renderer } from './Renderer.js';
 import { Input }    from './Input.js';
 import { UI }       from './UI.js';
+import { PRESETS }  from './Presets.js';
 
 const ESCAPE_RADIUS = 5000;
 const UI_REFRESH_INTERVAL = 6; // update body list every N frames (~10 fps)
+const DENSITY = 100 / (8 ** 3); // matches UI.js
 
 export class Game {
   constructor(canvas) {
@@ -35,6 +37,9 @@ export class Game {
       () => this.reset(),
       (id) => this._removeBody(id),
       (mode) => this._setMode(mode),
+      (name) => this._applyPreset(name),
+      () => this._save(),
+      () => this._load(),
     );
 
     window.addEventListener('resize', () => this._onResize());
@@ -119,7 +124,13 @@ export class Game {
       activeStar.mass = this._ui.config.starMass;
     }
     if (!this.paused && dt > 0) {
-      this._physics.step(this.bodies, activeStar, dt);
+      const { fragments } = this._physics.step(
+        this.bodies, activeStar, dt,
+        { explosions: this._ui.config.explosions },
+      );
+      for (const f of fragments) {
+        this.bodies.push(new CelestialBody(f));
+      }
     }
 
     // 4. Escape detection (measured from star in star-mode, canvas centre in freeform)
@@ -156,6 +167,75 @@ export class Game {
     this.mode = mode;
     // Invalidate background gradient so it redraws centred correctly
     this._renderer._bgGradient = null;
+  }
+
+  // ── Presets ───────────────────────────────────────────────────────────────
+
+  _applyPreset(name) {
+    const preset = PRESETS[name];
+    if (!preset) return;
+    const mode = preset.mode ?? 'star';
+    this._ui.setSimMode(mode);
+    this._setMode(mode);
+    if (mode === 'star') this._ui.setStarMass(preset.starMass ?? 1_000_000);
+    this.bodies = [];
+    this._inspectedId = null;
+    this.camera.panX = 0;
+    this.camera.panY = 0;
+    this.camera.zoom = 1;
+    const cx = mode === 'star' ? this.star.position.x : this.canvas.width  / 2;
+    const cy = mode === 'star' ? this.star.position.y : this.canvas.height / 2;
+    for (const b of preset.bodies) {
+      this.bodies.push(new CelestialBody({
+        x: cx + b.dx, y: cy + b.dy,
+        vx: b.vx, vy: b.vy,
+        mass:   b.mass ?? this._massFromRadius(b.radius),
+        radius: b.radius,
+        color:  b.color,
+        type:   b.type,
+      }));
+    }
+  }
+
+  _massFromRadius(r) {
+    return Math.max(1, Math.round(DENSITY * r ** 3));
+  }
+
+  // ── Save / Load ───────────────────────────────────────────────────────────
+
+  _save() {
+    const refX = this.mode === 'star' ? this.star.position.x : this.canvas.width  / 2;
+    const refY = this.mode === 'star' ? this.star.position.y : this.canvas.height / 2;
+    const data = {
+      mode:     this.mode,
+      starMass: this._ui.config.starMass,
+      bodies:   this.bodies.map(b => ({
+        dx: b.position.x - refX, dy: b.position.y - refY,
+        vx: b.velocity.vx,       vy: b.velocity.vy,
+        mass: b.mass, radius: b.radius, color: b.color, type: b.type,
+      })),
+    };
+    localStorage.setItem('orbit-save-v1', JSON.stringify(data));
+  }
+
+  _load() {
+    const raw = localStorage.getItem('orbit-save-v1');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    this._ui.setSimMode(data.mode);
+    this._setMode(data.mode);
+    this._ui.setStarMass(data.starMass);
+    this.bodies = [];
+    this._inspectedId = null;
+    const refX = data.mode === 'star' ? this.star.position.x : this.canvas.width  / 2;
+    const refY = data.mode === 'star' ? this.star.position.y : this.canvas.height / 2;
+    for (const b of data.bodies) {
+      this.bodies.push(new CelestialBody({
+        x: refX + b.dx, y: refY + b.dy,
+        vx: b.vx, vy: b.vy,
+        mass: b.mass, radius: b.radius, color: b.color, type: b.type,
+      }));
+    }
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

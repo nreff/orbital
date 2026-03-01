@@ -11,13 +11,20 @@ const STAR_DEFAULT_COLOR = '#ffe066';
 const PLANET_DEFAULT_COLOR = '#4fc3f7';
 
 export class UI {
-  constructor(onPause, onReset, onRemoveBody, onModeChange) {
+  constructor(onPause, onReset, onRemoveBody, onModeChange, onPreset, onSave, onLoad) {
     this._onPause      = onPause;
     this._onReset      = onReset;
     this._onRemoveBody = onRemoveBody;
     this._onModeChange = onModeChange;
+    this._onPreset     = onPreset;
+    this._onSave       = onSave;
+    this._onLoad       = onLoad;
     this._bodyType     = 'planet';
     this._simMode      = 'star';
+
+    this._showPredictor  = true;
+    this._showVelArrows  = false;
+    this._explosions     = false;
 
     this._sizeSlider     = document.getElementById('size-slider');
     this._sizeReadout    = document.getElementById('size-readout');
@@ -50,6 +57,33 @@ export class UI {
     this._btnTypePlanet.addEventListener('click', () => this._selectBodyType('planet'));
     this._btnTypeStar.addEventListener('click',   () => this._selectBodyType('star'));
 
+    // Save / Load
+    document.getElementById('btn-save').addEventListener('click', () => this._onSave());
+    document.getElementById('btn-load').addEventListener('click', () => this._onLoad());
+
+    // Display toggles
+    this._btnPredictor  = document.getElementById('btn-predictor');
+    this._btnVelArrows  = document.getElementById('btn-vel-arrows');
+    this._btnPredictor.addEventListener('click', () => {
+      this._showPredictor = !this._showPredictor;
+      this._btnPredictor.classList.toggle('active', this._showPredictor);
+    });
+    this._btnVelArrows.addEventListener('click', () => {
+      this._showVelArrows = !this._showVelArrows;
+      this._btnVelArrows.classList.toggle('active', this._showVelArrows);
+    });
+
+    this._btnExplosions = document.getElementById('btn-explosions');
+    this._btnExplosions.addEventListener('click', () => {
+      this._explosions = !this._explosions;
+      this._btnExplosions.classList.toggle('active', this._explosions);
+    });
+
+    // Presets
+    for (const btn of document.querySelectorAll('.preset-btn')) {
+      btn.addEventListener('click', () => this._onPreset(btn.dataset.preset));
+    }
+
     this._onSizeChange();
     this._updateStarMassLabel();
     this._onSpeedChange();
@@ -60,14 +94,17 @@ export class UI {
     const r        = +this._sizeSlider.value;
     const starMass = this._sliderToStarMass(+this._starMassSlider.value);
     return {
-      radius:        r,
+      radius:           r,
       // Star-type bodies get star-scale mass so they have real gravitational pull
-      mass:          this._bodyType === 'star' ? starMass : this._radiusToMass(r),
-      newBodyColor:  this._colorPicker.value,
-      newBodyRadius: r,
-      type:          this._bodyType,
+      mass:             this._bodyType === 'star' ? starMass : this._radiusToMass(r),
+      newBodyColor:     this._colorPicker.value,
+      newBodyRadius:    r,
+      type:             this._bodyType,
       starMass,
-      timeScale:     Math.pow(2, +this._speedSlider.value),
+      timeScale:        Math.pow(2, +this._speedSlider.value),
+      showPredictor:      this._showPredictor,
+      showVelocityArrows: this._showVelArrows,
+      explosions:         this._explosions,
     };
   }
 
@@ -75,6 +112,18 @@ export class UI {
   setPaused(paused) {
     this._btnPause.textContent = paused ? 'Resume' : 'Pause';
     this._btnPause.classList.toggle('active', paused);
+  }
+
+  /** Set star mass slider to match the given mass value. */
+  setStarMass(mass) {
+    const v = (Math.log10(mass) - 4) * 100 / 3;
+    this._starMassSlider.value = Math.round(Math.max(0, Math.min(100, v)));
+    this._updateStarMassLabel();
+  }
+
+  /** Set the sim mode (star/freeform) via the UI. */
+  setSimMode(mode) {
+    this._selectMode(mode);
   }
 
   /**

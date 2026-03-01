@@ -290,6 +290,17 @@ button.active {
   background: transparent;
 }
 
+.preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.preset-btn {
+  font-size: 11px;
+  padding: 5px 2px;
+}
+
 .hint {
   color: var(--muted);
   font-size: 11px;
